@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Grants Summary Viewer</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<style>
+			.filter-checkbox:checked + span {
+				@apply bg-blue-100 border-blue-500;
+			}
+		</style>
+	</head>
+	<body class="bg-gray-50 text-gray-900 min-h-screen">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+			<h1 class="text-3xl font-bold mb-8">Grants Summary Explorer</h1>
+
+			<div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+				<!-- Filter sidebar -->
+				<div class="md:col-span-1 bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                    <div class="pt-6 border-t border-gray-200">
+						<label class="block text-sm font-medium text-gray-700 mb-2">
+							Load Grants Data
+						</label>
+						<input
+							type="file"
+							id="grants-file-input"
+							accept=".json"
+							class="block w-full text-sm text-gray-500
+							file:mr-4 file:py-2 file:px-4
+							file:rounded-md file:border-0
+							file:text-sm file:font-medium
+							file:bg-blue-50 file:text-blue-700
+							hover:file:bg-blue-100"
+						/>
+						
+						<div class="mt-4 space-y-2">
+							<button id="save-grants-btn" class="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+								Save Changes
+							</button>
+							<button id="export-grants-btn" class="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+								Export JSON
+							</button>
+						</div>
+					</div>
+                    
+					<h2 class="text-lg font-semibold mb-4">Filters</h2>
+					
+					<div class="mb-6">
+						<label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+						<input 
+							type="text" 
+							id="search-input" 
+							placeholder="Search grants..." 
+							class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+						>
+					</div>
+					
+					<div class="mb-6">
+						<label class="block text-sm font-medium text-gray-700 mb-2">Complexity</label>
+						<div id="complexity-filters" class="space-y-2">
+							<label class="flex items-center space-x-2 cursor-pointer">
+								<input type="checkbox" class="filter-checkbox sr-only" value="Easy">
+								<span class="px-3 py-1 rounded-md border border-gray-200 text-sm transition-colors duration-150 flex-grow">
+									Easy
+								</span>
+							</label>
+							<label class="flex items-center space-x-2 cursor-pointer">
+								<input type="checkbox" class="filter-checkbox sr-only" value="Medium">
+								<span class="px-3 py-1 rounded-md border border-gray-200 text-sm transition-colors duration-150 flex-grow">
+									Medium
+								</span>
+							</label>
+							<label class="flex items-center space-x-2 cursor-pointer">
+								<input type="checkbox" class="filter-checkbox sr-only" value="Hard">
+								<span class="px-3 py-1 rounded-md border border-gray-200 text-sm transition-colors duration-150 flex-grow">
+									Hard
+								</span>
+							</label>
+						</div>
+					</div>
+					
+					<div class="mb-6">
+						<label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+						<div id="status-filters" class="space-y-2">
+							<label class="flex items-center space-x-2 cursor-pointer">
+								<input type="checkbox" class="filter-checkbox sr-only" value="checked">
+								<span class="px-3 py-1 rounded-md border border-gray-200 text-sm transition-colors duration-150 flex-grow">
+									Checked
+								</span>
+							</label>
+							<label class="flex items-center space-x-2 cursor-pointer">
+								<input type="checkbox" class="filter-checkbox sr-only" value="unchecked">
+								<span class="px-3 py-1 rounded-md border border-gray-200 text-sm transition-colors duration-150 flex-grow">
+									Unchecked
+								</span>
+							</label>
+						</div>
+					</div>
+					
+					<div class="flex items-center justify-between mb-6">
+						<button id="clear-filters" class="text-sm text-blue-600 hover:text-blue-800">
+							Clear filters
+						</button>
+						<span id="filter-count" class="text-sm text-gray-500">0 selected</span>
+					</div>
+				</div>
+
+				<!-- Grants list -->
+				<div class="md:col-span-3">
+					<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+						<div class="flex items-center justify-between">
+							<h2 class="text-lg font-semibold">Available Grants</h2>
+							<div class="flex space-x-2 items-center">
+								<span id="results-count" class="text-sm text-gray-500">Loading grants...</span>
+							</div>
+						</div>
+					</div>
+
+					<div id="grants-container" class="space-y-4">
+						<!-- Loading indicator -->
+						<div class="flex justify-center items-center h-40">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			// Default empty grants data
+			let grantsData = [];
+			let hasChanges = false;
+			let originalFileName = '';
+			
+			document.addEventListener('DOMContentLoaded', () => {
+				// Reference to DOM elements
+				const grantsContainer = document.getElementById('grants-container');
+				const resultsCount = document.getElementById('results-count');
+				const searchInput = document.getElementById('search-input');
+				const clearFiltersBtn = document.getElementById('clear-filters');
+				const filterCount = document.getElementById('filter-count');
+				const complexityFilters = document.querySelectorAll('#complexity-filters input');
+				const statusFilters = document.querySelectorAll('#status-filters input');
+				const fileInput = document.getElementById('grants-file-input');
+				const saveGrantsBtn = document.getElementById('save-grants-btn');
+				const exportGrantsBtn = document.getElementById('export-grants-btn');
+				
+				// Function to render grants
+				const renderGrants = (filteredGrants) => {
+					grantsContainer.innerHTML = '';
+					
+					if (filteredGrants.length === 0) {
+						grantsContainer.innerHTML = `
+							<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
+								<p class="text-gray-500">No grants match your filter criteria.</p>
+							</div>
+						`;
+						resultsCount.textContent = `No matching grants found`;
+						return;
+					}
+					
+					filteredGrants.forEach(grant => {
+						const grantElement = document.createElement('div');
+						grantElement.className = 'bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow';
+						
+						// Create complexity badge class based on complexity level
+						let complexityClass = 'bg-blue-100 text-blue-800'; // Default for medium
+						if (grant.complexity === 'Easy') {
+							complexityClass = 'bg-green-100 text-green-800';
+						} else if (grant.complexity === 'Hard') {
+							complexityClass = 'bg-orange-100 text-orange-800';
+						}
+						
+						grantElement.innerHTML = `
+							<div class="flex justify-between items-start mb-2">
+								<div class="flex items-center">
+									<input 
+										type="checkbox" 
+										id="grant-${grant.id}" 
+										class="grant-checkbox h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 mr-3"
+										${grant.checked ? 'checked' : ''}
+									>
+									<h3 class="text-lg font-medium text-gray-900">${grant.title}</h3>
+								</div>
+								<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${complexityClass}">
+									${grant.complexity}
+								</span>
+							</div>
+							
+							<p class="text-sm text-gray-600 mb-3">${grant.programName}</p>
+							
+							<div class="prose prose-sm max-w-none text-gray-700 mb-4">
+								<p>${grant.summary}</p>
+							</div>
+							
+							<div class="mt-4 pt-4 border-t border-gray-200">
+								<h4 class="text-sm font-medium text-gray-700 mb-2">Application Tip</h4>
+								<p class="text-sm text-gray-600">${grant.tip}</p>
+							</div>
+						`;
+						
+						grantsContainer.appendChild(grantElement);
+						
+						// Add event listener to the checkbox
+						const checkbox = grantElement.querySelector(`#grant-${grant.id}`);
+						checkbox.addEventListener('change', () => {
+							const grantIndex = grantsData.findIndex(g => g.id === grant.id);
+							if (grantIndex !== -1) {
+								grantsData[grantIndex].checked = checkbox.checked;
+								hasChanges = true;
+								saveGrantsBtn.disabled = false;
+								exportGrantsBtn.disabled = false;
+								
+								// Check if we need to hide this item based on current filters
+								const selectedStatuses = Array.from(statusFilters)
+									.filter(checkbox => checkbox.checked)
+									.map(checkbox => checkbox.value);
+									
+								// If "unchecked" filter is active and this item was just checked, hide it
+								if (selectedStatuses.includes('unchecked') && !selectedStatuses.includes('checked') && checkbox.checked) {
+									// Re-apply filters immediately to update the view
+									applyFilters();
+								}
+								// If "checked" filter is active and this item was just unchecked, hide it
+								else if (selectedStatuses.includes('checked') && !selectedStatuses.includes('unchecked') && !checkbox.checked) {
+									// Re-apply filters immediately to update the view
+									applyFilters();
+								}
+							}
+						});
+					});
+					
+					resultsCount.textContent = `Showing ${filteredGrants.length} of ${grantsData.length} grants`;
+				};
+				
+				// Function to apply filters
+				const applyFilters = () => {
+					const selectedComplexities = Array.from(complexityFilters)
+						.filter(checkbox => checkbox.checked)
+						.map(checkbox => checkbox.value);
+					
+					const selectedStatuses = Array.from(statusFilters)
+						.filter(checkbox => checkbox.checked)
+						.map(checkbox => checkbox.value);
+					
+					const searchQuery = searchInput.value.toLowerCase().trim();
+					
+					const totalSelected = selectedComplexities.length + selectedStatuses.length;
+					filterCount.textContent = `${totalSelected} selected`;
+					
+					let filteredGrants = grantsData;
+					
+					// Apply complexity filter if any are selected
+					if (selectedComplexities.length > 0) {
+						filteredGrants = filteredGrants.filter(grant => 
+							selectedComplexities.includes(grant.complexity)
+						);
+					}
+					
+					// Apply status filter if any are selected
+					if (selectedStatuses.length > 0) {
+						filteredGrants = filteredGrants.filter(grant => {
+							if (selectedStatuses.includes('checked') && grant.checked) return true;
+							if (selectedStatuses.includes('unchecked') && !grant.checked) return true;
+							return false;
+						});
+					}
+					
+					// Apply search filter if query exists
+					if (searchQuery) {
+						filteredGrants = filteredGrants.filter(grant => 
+							grant.title.toLowerCase().includes(searchQuery) || 
+							grant.programName.toLowerCase().includes(searchQuery) ||
+							grant.summary.toLowerCase().includes(searchQuery)
+						);
+					}
+					
+					renderGrants(filteredGrants);
+				};
+				
+				// Ensure each grant has an ID
+				const ensureGrantIds = (grants) => {
+					return grants.map((grant, index) => {
+						if (!grant.id) {
+							grant.id = `grant-${index}`;
+						}
+						if (grant.checked === undefined) {
+							grant.checked = false;
+						}
+						return grant;
+					});
+				};
+				
+				// Handle file selection
+				fileInput.addEventListener('change', (event) => {
+					const file = event.target.files[0];
+					if (file) {
+						originalFileName = file.name;
+						const reader = new FileReader();
+						reader.onload = (e) => {
+							try {
+								grantsData = JSON.parse(e.target.result);
+								grantsData = ensureGrantIds(grantsData);
+								applyFilters(); // Apply filters and render grants
+								resultsCount.textContent = `Loaded ${grantsData.length} grants`;
+								saveGrantsBtn.disabled = true;
+								exportGrantsBtn.disabled = false;
+								hasChanges = false;
+							} catch (error) {
+								console.error('Error parsing JSON:', error);
+								grantsContainer.innerHTML = `
+									<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
+										<p class="text-red-500">Error loading grants data: ${error.message}</p>
+									</div>
+								`;
+							}
+						};
+						reader.readAsText(file);
+					}
+				});
+				
+				// Save changes to local storage
+				saveGrantsBtn.addEventListener('click', () => {
+					try {
+						localStorage.setItem('grantsData', JSON.stringify(grantsData));
+						localStorage.setItem('grantsFileName', originalFileName);
+						saveGrantsBtn.disabled = true;
+						hasChanges = false;
+						alert('Changes saved successfully!');
+					} catch (error) {
+						console.error('Error saving data:', error);
+						alert('Error saving data: ' + error.message);
+					}
+				});
+				
+				// Export JSON
+				exportGrantsBtn.addEventListener('click', () => {
+					try {
+						const dataStr = JSON.stringify(grantsData, null, 2);
+						const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+						
+						const exportFileName = originalFileName.replace('.json', '-updated.json');
+						
+						const linkElement = document.createElement('a');
+						linkElement.setAttribute('href', dataUri);
+						linkElement.setAttribute('download', exportFileName);
+						linkElement.click();
+					} catch (error) {
+						console.error('Error exporting data:', error);
+						alert('Error exporting data: ' + error.message);
+					}
+				});
+				
+				// Check for saved data on load
+				const checkForSavedData = () => {
+					const savedData = localStorage.getItem('grantsData');
+					const savedFileName = localStorage.getItem('grantsFileName');
+					
+					if (savedData) {
+						try {
+							grantsData = JSON.parse(savedData);
+							originalFileName = savedFileName || 'grants-data.json';
+							applyFilters();
+							resultsCount.textContent = `Loaded ${grantsData.length} grants from saved data`;
+							exportGrantsBtn.disabled = false;
+							return true;
+						} catch (error) {
+							console.error('Error loading saved data:', error);
+							return false;
+						}
+					}
+					return false;
+				};
+				
+				// Add event listeners
+				searchInput.addEventListener('input', applyFilters);
+				
+				complexityFilters.forEach(checkbox => {
+					checkbox.addEventListener('change', applyFilters);
+				});
+				
+				statusFilters.forEach(checkbox => {
+					checkbox.addEventListener('change', applyFilters);
+				});
+				
+				clearFiltersBtn.addEventListener('click', () => {
+					searchInput.value = '';
+					complexityFilters.forEach(checkbox => {
+						checkbox.checked = false;
+					});
+					statusFilters.forEach(checkbox => {
+						checkbox.checked = false;
+					});
+					applyFilters();
+				});
+				
+				// Initial state
+				if (!checkForSavedData()) {
+					grantsContainer.innerHTML = `
+						<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
+							<p class="text-gray-500">Please select a JSON file to load grants data.</p>
+						</div>
+					`;
+					resultsCount.textContent = 'No grants loaded';
+				}
+			});
+		</script>
+	</body>
+</html>
